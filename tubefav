@@ -1,0 +1,114 @@
+#!/bin/bash
+# a simple youtube channel registration
+# by nanoseb
+# depends on xmlstarlet
+# license WTFPL
+# man
+#               list all new videos
+# -a channel    add channel to your list
+# -d channel    delete channel of your list
+# -h            print this help
+
+
+
+
+# Database
+channelfile="$HOME/.channelfile.xml"
+
+#temporary file
+youtemp="/tmp/youtemp$(tr -dc "[:alpha:]" < /dev/urandom | head -c 8)"
+
+if [ ! -f "$channelfile" ]
+then
+    echo -e "<xml>\n</xml>" > "$channelfile"
+fi
+
+
+listchannel=$(xmlstarlet sel -T -t -m "//channel" -v "concat(@title,' ')" $channelfile)
+
+
+
+get_last () {
+    wget -q -O "$youtemp" "https://www.youtube.com/user/${channel}/videos"
+    last=$(grep -m 1 aria-describedby $youtemp | awk -F"\"" '{print $14}' | sed 's/.*=//')
+}
+
+
+
+add_channel () {
+    get_last
+    name=$(grep -m 1 title $youtemp | awk -F ">" '{print $2}' | sed 's/..//')
+
+    if [ -n "$last" ]
+    then
+        if [ -z "$(grep $channel <<<$listchannel)" ]
+        then
+            xmlstarlet ed -L -s /xml -t elem -n channelTMP -v "" \
+                -i //channelTMP -t attr -n "title" -v "$channel"  \
+                -s //channelTMP -t elem -n "name" -v "$name"  \
+                -s //channelTMP -t elem -n "last" -v "$last"  \
+                -r //channelTMP -v channel   "$channelfile"
+            echo channel $name added
+        else
+            echo Channel already in the list
+        fi
+    else
+        echo Unknown channel
+    fi
+    rm "$youtemp"
+}
+
+
+delete_channel () {
+    xmlstarlet ed -L -d "/xml/channel[@title='$channel']" "$channelfile"
+    echo Channel $channel deleted
+}
+
+
+print_man () {
+echo -e "a simple youtube channel registration
+by nanoseb
+license WTFPL
+man :
+              list all new videos
+-a channel    add a channel to your list
+-d channel    delete a channel of your list
+-h            print this help"
+}
+
+
+list_new () {
+    for channel in $listchannel
+    do
+        get_last
+        lastbdd=$(xmlstarlet sel -t -m "//channel[@title='$channel']" -v last -n "$channelfile")
+        name=$(xmlstarlet sel -t -m "//channel[@title='$channel']" -v name -n "$channelfile")
+        echo -e "\e[1;32m"--- $name ---
+        tput sgr0
+
+        if [ "$last" != "$lastbdd" ]
+        then
+            grep aria-describedby "$youtemp" | grep -B 30 "$lastbdd" | head -n -1 | awk -F"\"" '{print $8, "https://www.youtube.com;", $14}' | sed 's/;\ //'
+            sed -i s/"$lastbdd"/"$last"/ "$channelfile"
+            echo
+        fi
+        rm "$youtemp"
+    done
+}
+
+
+param=$1
+
+case $param in
+    -a) channel=$2
+        add_channel;;
+    -d) channel=$2
+        delete_channel;;
+    -h) print_man ;;
+    *) list_new ;;
+esac
+
+exit 0
+
+
+
